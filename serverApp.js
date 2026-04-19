@@ -1,6 +1,9 @@
 var express = require("express");
 const { MongoClient } = require('mongodb');
 var app = express();
+const WebSocket = require('ws');
+const path = require('path');
+
 
 const url = 'mongodb://localhost:27017';
 const client = new MongoClient(url);
@@ -17,6 +20,14 @@ app.use(
 )
 
 app.use(express.json());
+
+const wss = new WebSocket.Server({ port: 3001 });
+wss.on('connection', function connection(ws) {
+    ws.on('message', function incoming(message) {
+        console.log('received: %s', message);
+    });
+    ws.send('something');
+});
 
 //asynchronous method to be executed to write info in the DB
 async function writeToDb(temperature, timestamp, sensor) {
@@ -38,11 +49,20 @@ async function writeToDb(temperature, timestamp, sensor) {
     return 'done.';
 }
 
+async function pushToWsClient(temperature){
+    wss.clients.forEach(function each(client) {
+        if (client.readyState === WebSocket.OPEN) {
+            client.send(temperature);
+        }
+    });
+}
 
 app.post("/temperature", (req, res, next) => {
     var temperature = req.body.temperature;
     var timestamp = req.body.timestamp;
     var sensor = req.body.sensor;
+    pushToWsClient(temperature).catch();
+
     writeToDb(temperature, timestamp, sensor)
         .then(console.log)
         .catch(console.error)
@@ -75,9 +95,7 @@ async function getLastTemperatureFromDB() {
 
 
 app.get('/dashboard', async (req, res) => {
-
-    let finalTemp = await getLastTemperatureFromDB()
-    res.send('Temperature: ' + finalTemp.value)
-    //res.json(finalTemp.value)
+    res.sendFile(path.join(__dirname + '/index.html'));
 })
+
 
